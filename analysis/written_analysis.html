@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lab 4 — Written Analysis: Monitoring Three Traffic Profiles</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #222;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  h1 { font-size: 18pt; margin-bottom: 4px; color: #1a1a2e; }
+  h2 { font-size: 14pt; color: #16213e; margin-top: 28px; border-bottom: 2px solid #0f3460; padding-bottom: 4px; }
+  h3 { font-size: 12pt; color: #0f3460; margin-top: 20px; }
+  .subtitle { font-size: 10pt; color: #666; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10pt; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th { background: #f0f0f0; font-weight: 600; }
+  .highlight { background: #fff3cd; }
+  .danger { background: #f8d7da; }
+  .success { background: #d4edda; }
+  img { max-width: 100%; border: 1px solid #ddd; margin: 10px 0; border-radius: 4px; }
+  .caption { font-size: 9pt; color: #666; text-align: center; margin-top: -6px; margin-bottom: 16px; font-style: italic; }
+  .metric { font-family: 'Consolas', monospace; font-weight: 600; }
+  .page-break { page-break-before: always; }
+  blockquote { border-left: 3px solid #0f3460; padding-left: 12px; margin-left: 0; color: #444; background: #f8f9fa; padding: 8px 12px; }
+</style>
+</head>
+<body>
+
+<h1>Lab 4 — Written Analysis</h1>
+<p class="subtitle">
+  DDM501 — AI in DevOps, DataOps, MLOps &middot; Monitoring and Production Deployment<br>
+  Three traffic profiles analysed against the Model Behaviour dashboard
+</p>
+
+<h2>1. Experimental Setup</h2>
+
+<p>
+  The credit risk API was deployed via <code>docker compose up -d --build</code> with four containers:
+  the FastAPI service, Prometheus (scraping every 10s), Grafana, and node-exporter. For each traffic
+  profile, the API container was restarted to reset the monitoring window, then 400 requests were sent
+  via <code>scripts/load_test.py</code>. The <code>/monitoring</code> endpoint was read after each run
+  and the Model Behaviour dashboard was screenshotted from Grafana.
+</p>
+
+<h3>Summary of results</h3>
+
+<table>
+  <tr>
+    <th>Profile</th>
+    <th>Score mean</th>
+    <th>APPROVE</th>
+    <th>REVIEW</th>
+    <th>DECLINE</th>
+    <th>Drift score (max PSI)</th>
+    <th>Drift status</th>
+    <th>Fairness gap</th>
+  </tr>
+  <tr class="success">
+    <td><strong>Normal</strong></td>
+    <td>0.2355</td>
+    <td>77.8%</td>
+    <td>14.2%</td>
+    <td>8.0%</td>
+    <td class="metric">0.030</td>
+    <td>stable</td>
+    <td class="metric">0.019</td>
+  </tr>
+  <tr class="highlight">
+    <td><strong>Drifted</strong> (full)</td>
+    <td>0.5897</td>
+    <td>15.5%</td>
+    <td>29.8%</td>
+    <td>54.8%</td>
+    <td class="metric">4.251</td>
+    <td>significant</td>
+    <td class="metric">0.038</td>
+  </tr>
+  <tr class="danger">
+    <td><strong>Unfair</strong></td>
+    <td>0.3966</td>
+    <td>52.2%</td>
+    <td>15.8%</td>
+    <td>32.0%</td>
+    <td class="metric">0.353</td>
+    <td>significant</td>
+    <td class="metric">0.722</td>
+  </tr>
+</table>
+
+<h3>Per-feature PSI breakdown</h3>
+
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>Normal</th>
+    <th>Drifted</th>
+    <th>Unfair</th>
+  </tr>
+  <tr>
+    <td>LIMIT_BAL</td>
+    <td class="metric">0.015</td>
+    <td class="metric danger">2.043</td>
+    <td class="metric">0.015</td>
+  </tr>
+  <tr>
+    <td>AGE</td>
+    <td class="metric">0.030</td>
+    <td class="metric danger">1.708</td>
+    <td class="metric">0.030</td>
+  </tr>
+  <tr>
+    <td>PAY_0</td>
+    <td class="metric">0.006</td>
+    <td class="metric highlight">0.826</td>
+    <td class="metric highlight">0.279</td>
+  </tr>
+  <tr>
+    <td>utilisation_ratio</td>
+    <td class="metric">0.029</td>
+    <td class="metric danger">3.092</td>
+    <td class="metric">0.029</td>
+  </tr>
+  <tr>
+    <td>payment_ratio</td>
+    <td class="metric">0.013</td>
+    <td class="metric danger">4.251</td>
+    <td class="metric highlight">0.288</td>
+  </tr>
+  <tr>
+    <td>max_delay</td>
+    <td class="metric">0.004</td>
+    <td class="metric highlight">0.782</td>
+    <td class="metric highlight">0.353</td>
+  </tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>2. Dashboard Screenshots</h2>
+
+<h3>2.1 Normal traffic</h3>
+<img src="../screenshots/01_normal_traffic_full.png" alt="Dashboard — normal traffic">
+<p class="caption">Figure 1 — Model Behaviour dashboard after 400 normal requests. All stat panels are green. Drift score 0.030 (stable), fairness gap 0.019.</p>
+
+<p>
+  Under normal traffic, all panels are green. The drift score sits at 0.030 — well below the 0.10
+  moderate threshold. All six monitored features report PSI values under 0.03, confirming the
+  live window matches the training reference. The fairness gap is 0.019: group 1.0 has a
+  selection rate of 23.4% versus group 2.0 at 21.6%, a difference within statistical noise for
+  400 requests. The decision mix shows APPROVE dominating at ~78%, with DECLINE at 8% — the
+  expected baseline for this model.
+</p>
+
+<div class="page-break"></div>
+
+<h3>2.2 Drifted traffic</h3>
+<img src="../screenshots/02_drifted_traffic_full.png" alt="Dashboard — drifted traffic">
+<p class="caption">Figure 2 — Model Behaviour dashboard after 400 drifted requests (strength 1.0). Drift score is red at 4.25, but fairness gap remains green at 0.038.</p>
+
+<p>
+  Under drifted traffic, the dashboard tells a dramatically different story. The drift score
+  stat panel turns red at 4.25 — far above the 0.25 "significant" threshold. The PSI per
+  feature panel reveals which features drove it: <code>payment_ratio</code> leads at 4.25,
+  followed by <code>utilisation_ratio</code> at 3.09 and <code>LIMIT_BAL</code> at 2.04.
+  This makes sense: the drift profile creates younger applicants with lower credit limits and
+  higher utilisation, so the financial-stress features move most.
+</p>
+<p>
+  Crucially, the <strong>fairness gap stays green at 0.038</strong>. Both groups are equally
+  affected by the population shift — group 1.0 at 86.9% selection rate and group 2.0 at
+  83.1%. The drift is broad and uniform, not targeted. The score distribution shifts upward
+  (p50 from ~0.16 to ~0.64), and the decision mix inverts: DECLINE jumps from 8% to 55%.
+</p>
+
+<div class="page-break"></div>
+
+<h3>2.3 Unfair traffic</h3>
+<img src="../screenshots/03_unfair_traffic_full.png" alt="Dashboard — unfair traffic">
+<p class="caption">Figure 3 — Model Behaviour dashboard after 400 unfair requests. Both drift (0.353) and fairness gap (0.722) are red. The selection rate panel shows the groups diverging sharply.</p>
+
+<p>
+  Under unfair traffic, the dashboard shows a qualitatively different pattern. The drift score
+  is 0.353 — above the 0.25 significant threshold, but only modestly so compared to the
+  drifted run's 4.25. The <strong>fairness gap panel is the one that explodes</strong>, jumping
+  to 0.722 — a 38x increase from the 0.019 baseline. The Selection Rate by Group panel makes
+  the story visible: group 1.0's selection rate rockets to 93.8% while group 2.0 stays at
+  21.6%, unchanged from the normal baseline.
+</p>
+<p>
+  The per-feature PSI shows only three features moved: <code>max_delay</code> (0.353),
+  <code>payment_ratio</code> (0.288), and <code>PAY_0</code> (0.279). These are exactly the
+  features the bias injection modified (pay_status pushed higher, pay_amt reduced to 25%).
+  The demographic and financial features (<code>LIMIT_BAL</code>, <code>AGE</code>,
+  <code>utilisation_ratio</code>) stayed at their normal-traffic PSI values — confirming the
+  shift is targeted, not broad.
+</p>
+
+<div class="page-break"></div>
+
+<h2>3. Analysis Questions</h2>
+
+<h3>3.1 Which signal moved first, and by how much before anything else did?</h3>
+
+<p>
+  <strong>Input drift (PSI) moved first</strong>, and it moved substantially before the decision
+  mix or fairness gap became visible.
+</p>
+<p>
+  At mild drift (strength 0.05), the drift score was already 0.189 — inside the moderate band
+  (0.10&ndash;0.25) — while the decision mix was essentially unchanged: 77.5% APPROVE vs
+  77.8% normal, and 8.5% DECLINE vs 8.0% normal. The mean score shifted by only 0.008 (from
+  0.2355 to 0.2437). The drift signal was <strong>24x the noise floor</strong> (0.189 vs the
+  0.030 normal baseline) at a point when no downstream metric had visibly moved.
+</p>
+<p>
+  This asymmetry is the central argument for input monitoring. PSI detects the shift in
+  the population the model is scoring <em>before</em> that shift propagates through the model
+  into the decisions. By the time the decline rate visibly rises, the model has been scoring
+  the wrong population for the duration of the observation window.
+</p>
+
+<blockquote>
+  The gap between when PSI moves and when the decision mix moves is the early warning window
+  that justifies the entire drift monitoring apparatus. In this experiment, it was at least
+  one full strength tier (0.05 &rarr; 0.15 before decline rate noticeably shifts).
+</blockquote>
+
+<h3>3.2 Which signal would have paged you, given your own alert thresholds?</h3>
+
+<p>The alert rules define seven triggers. Here is which would fire under each profile:</p>
+
+<table>
+  <tr>
+    <th>Alert rule</th>
+    <th>Threshold</th>
+    <th>Normal</th>
+    <th>Drifted</th>
+    <th>Unfair</th>
+  </tr>
+  <tr>
+    <td>ModerateFeatureDrift</td>
+    <td>PSI &gt; 0.10, 15m, warning</td>
+    <td class="success">No</td>
+    <td class="danger">Yes</td>
+    <td class="danger">Yes</td>
+  </tr>
+  <tr>
+    <td>SignificantFeatureDrift</td>
+    <td>PSI &gt; 0.25, 15m, critical</td>
+    <td class="success">No</td>
+    <td class="danger">Yes</td>
+    <td class="danger">Yes</td>
+  </tr>
+  <tr>
+    <td>DriftWindowTooSmall</td>
+    <td>&lt; 200 rows, 30m, info</td>
+    <td class="success">No*</td>
+    <td class="success">No*</td>
+    <td class="success">No*</td>
+  </tr>
+  <tr>
+    <td>DecisionMixShift</td>
+    <td>decline &gt; 20%, 30m, warning</td>
+    <td class="success">No</td>
+    <td class="danger">Yes</td>
+    <td class="danger">Yes</td>
+  </tr>
+  <tr>
+    <td>FairnessGapWidened</td>
+    <td>gap &gt; 0.10, 20m, critical</td>
+    <td class="success">No</td>
+    <td class="success">No</td>
+    <td class="danger"><strong>Yes</strong></td>
+  </tr>
+  <tr>
+    <td>PredictionErrorsRising</td>
+    <td>&gt; 0.1/s, 5m, critical</td>
+    <td class="success">No</td>
+    <td class="success">No</td>
+    <td class="success">No</td>
+  </tr>
+  <tr>
+    <td>ExplanationLatencyHigh</td>
+    <td>p95 &gt; 1s, 10m, warning</td>
+    <td class="success">No</td>
+    <td class="success">No</td>
+    <td class="success">No</td>
+  </tr>
+</table>
+<p style="font-size: 9pt; color: #666;">* DriftWindowTooSmall fires transiently during the initial fill (< 200 requests) but clears once the window reaches 200.</p>
+
+<p>
+  Under <strong>drifted traffic</strong>, three alerts would page:
+  <em>SignificantFeatureDrift</em> (critical) fires first because PSI crosses 0.25 quickly,
+  followed by <em>ModerateFeatureDrift</em> (warning, fires on the same data), and
+  <em>DecisionMixShift</em> (warning, once the decline rate sustains above 20%).
+  The <strong>first page is SignificantFeatureDrift</strong> — a critical-severity alert.
+</p>
+<p>
+  Under <strong>unfair traffic</strong>, four alerts fire. The same drift alerts trigger
+  (PSI 0.353 &gt; 0.25), plus <em>DecisionMixShift</em> (decline rate 32% &gt; 20%),
+  and critically, <strong>FairnessGapWidened</strong> fires — the only alert with
+  <code>severity: critical</code> and <code>signal: fairness</code>. This is the alert
+  that distinguishes unfair traffic from drifted traffic: it fires exclusively when the
+  selection-rate gap between groups exceeds 0.10.
+</p>
+
+<h3>3.3 Which signal told you what was wrong, rather than only that something was? Compare the drifted and unfair runs.</h3>
+
+<p>
+  The aggregate drift score cannot distinguish drifted from unfair traffic. Both runs
+  crossed the 0.25 significant threshold (4.25 vs 0.35). The aggregate number says
+  <em>"something moved"</em> but not <em>"what moved"</em> or <em>"who absorbed the change."</em>
+</p>
+
+<p><strong>Two signals separate them:</strong></p>
+
+<p>
+  <strong>1. The per-feature PSI panel tells you WHAT moved.</strong>
+  Under drifted traffic, all six features climb: <code>payment_ratio</code> (4.25),
+  <code>utilisation_ratio</code> (3.09), <code>LIMIT_BAL</code> (2.04),
+  <code>AGE</code> (1.71), <code>PAY_0</code> (0.83), <code>max_delay</code> (0.78).
+  This is a broad population shift — every feature participated. Under unfair traffic,
+  only three features moved: <code>max_delay</code> (0.35), <code>payment_ratio</code> (0.29),
+  <code>PAY_0</code> (0.28). The demographic and financial features stayed at their normal
+  baseline. A narrow shift in repayment-behaviour features, concentrated in the features the
+  bias injection modified, points to a targeted change in one subpopulation, not a broad shift.
+</p>
+
+<p>
+  <strong>2. The fairness gap and selection-rate-by-group panels tell you WHO was affected.</strong>
+  Under drifted traffic, the fairness gap was 0.038 — both groups were equally harmed by
+  the drift. Under unfair traffic, it jumped to 0.722: group 1.0's selection rate rose from
+  23.4% to 93.8% while group 2.0 stayed at 21.6%. The Selection Rate by Group panel on the
+  dashboard makes this visually unambiguous — one line stays flat while the other skyrockets.
+</p>
+
+<blockquote>
+  The aggregate drift score is an alarm. The per-feature PSI is a diagnostic.
+  The fairness gap is an attribution. You need all three to move from "something is wrong"
+  to "this specific subpopulation is being treated differently on these specific features."
+  An alert system with only the aggregate would page identically for drifted and unfair traffic
+  and give the responder no guidance on where to look — which is why the dashboard has five
+  sections, not one number.
+</blockquote>
+
+</body>
+</html>
